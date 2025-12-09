@@ -1,267 +1,178 @@
-// import pkg from '@slack/bolt';
-// const { App } = pkg;
-// import dotenv from 'dotenv';
-// dotenv.config();
-
-// // Print tokens for debugging
-// console.log("BOT TOKEN:", process.env.SLACK_BOT_TOKEN);
-// console.log("APP TOKEN:", process.env.SLACK_APP_TOKEN);
-
-// // Start Slack App
-// const app = new App({
-//   token: process.env.SLACK_BOT_TOKEN,     // xoxb-...
-//   appToken: process.env.SLACK_APP_TOKEN,  // xapp-...
-//   socketMode: true,
-// });
-
-// // Listen ANY type of message
-// app.event('message', async ({ event, client }) => {
-//   console.log("🔥 EVENT RECEIVED:", event);
-
-//   // Reply back to channel
-//   if (event.channel) {
-//     await client.chat.postMessage({
-//       channel: event.channel,
-//       text: `👋 Bot received: "Arr Bwar"`
-//     });
-//   }
-// });
-
-// // Health Check Route
-// app.message(async ({ message }) => {
-//   console.log("📌 Received through app.message:", message.text);
-// });
-
-// (async () => {
-//   await app.start(process.env.PORT || 3000);
-//   console.log("⚡ Bot is running in Socket Mode!");
-// })();
-
-
-// import pkg from '@slack/bolt';
-// const { App } = pkg;
-// import dotenv from 'dotenv';
-// dotenv.config();
-
-// const app = new App({
-//   token: process.env.SLACK_BOT_TOKEN, // xoxb token
-//   appToken: process.env.SLACK_APP_TOKEN, // xapp token
-//   socketMode: true,
-// });
-
-// // When user types: "create group: project-x @U12345 @U88888"
-// app.message(/^create group:/i, async ({ message, say, client }) => {
-//   try {
-//     const text = message.text;
-//     const parts = text.split(":")[1].trim().split(/\s+/);
-
-//     const channelName = parts[0]; // project-x
-//     const members = parts.slice(1); // [ "<@U123>", "<@U888>" ]
-
-//     console.log("Group Name:", channelName);
-//     console.log("Members:", members);
-
-//     // Create private channel
-//     const res = await client.conversations.create({
-//       name: channelName,
-//       is_private: true
-//     });
-
-//     const channelId = res.channel.id;
-//     console.log("Channel ID:", channelId);
-
-//     // Convert <@U123ABC> into raw user ids
-//     const userIds = members
-//       .map(m => {
-//         const match = m.match(/^<@([A-Z0-9]+)>$/i);
-//         return match ? match[1] : null;
-//       })
-//       .filter(Boolean);
-
-//     // auto invite bot
-//     await client.conversations.invite({
-//       channel: channelId,
-//       users: message.user // <- creator invited
-//     });
-
-//     // invite users if exist
-//     if (userIds.length > 0) {
-//       await client.conversations.invite({
-//         channel: channelId,
-//         users: userIds.join(',')
-//       });
-//     }
-
-//     await say(`✔ Created private group <#${channelId}>`);
-//   } catch (err) {
-//     console.log(err);
-//     await say("❌ Error creating group");
-//   }
-// });
-
-// // Start app
-// (async () => {
-//   await app.start(process.env.PORT || 3000);
-//   console.log("⚡ Bot running for group creation!");
-// })();
-
-
-// import pkg from '@slack/bolt';
-// const { App } = pkg;
-// import dotenv from 'dotenv';
-// dotenv.config();
-
-// const app = new App({
-//   token: process.env.SLACK_BOT_TOKEN,   // xoxb-...
-//   appToken: process.env.SLACK_APP_TOKEN, // xapp-... for Socket Mode
-//   socketMode: true,
-// });
-
-// // // Auto-create group when any message is sent
-// app.event('message', async ({ event, client }) => {
-//   try {
-//     // ignore messages from the bot itself
-//     const botUserId = process.env.BOT_USER_ID; // put your bot ID in .env
-//     if (!event.user || event.user === botUserId) return;
-
-//     const senderUserId = event.user;
-//     const text = event.text || '';
-
-//     console.log("New message:", text, "from user:", senderUserId);
-
-//     // Generate a unique group name
-//     const channelName = `chat-${Date.now()}`;
-
-//     // Create private group
-//     const res = await client.conversations.create({
-//       name: channelName,
-//       is_private: true
-//     });
-//     const channelId = res.channel.id;
-
-//     // Invite bot + sender + agent
-//     const agentId = 'U0A1WJS2S0H'; // your agent ID
-//     const inviteUsers = [senderUserId, agentId];
-//     await client.conversations.invite({
-//       channel: channelId,
-//       users: inviteUsers.join(',')
-//     });
-
-//     // Welcome message
-//     await client.chat.postMessage({
-//       channel: channelId,
-//       text: `👋 Welcome! This private group <#${channelId}> has been created automatically.`
-//     });
-
-//     console.log(`Group created: ${channelName} (${channelId}) with users: ${inviteUsers.join(', ')}`);
-
-//   } catch (err) {
-//     console.error("Error auto-creating group:", err);
-//   }
-// });
-
-
-// // Start the bot
-// (async () => {
-//   await app.start(process.env.PORT || 3000);
-//   console.log("⚡ Bolt app running in Socket Mode!");
-// })();
-
-
-import pkg from '@slack/bolt';
-const { App } = pkg;
-import express from 'express';
-import dotenv from 'dotenv';
+import express from "express";
+import axios from "axios";
+import fs from "fs";
+import dotenv from "dotenv";
 dotenv.config();
 
-
+const app = express();
 const PORT = process.env.PORT || 3000;
-const server = express();
 
-server.get('/', (req, res) => {
-  res.send('✅ Server is running!');
-});
+app.use("/slack/events", express.json());
+app.get("/", (req, res) => {
+    res.send("Hello")
+})
 
-const app = new App({
-  token: process.env.SLACK_BOT_TOKEN,   // xoxb-...
-  appToken: process.env.SLACK_APP_TOKEN, // xapp-... for Socket Mode
-  socketMode: true,
-});
+// =================== SLACK CALLBACK ===================
+app.post("/slack/events", async (req, res) => {
+  // Slack verification
+  if (req.body.type === "url_verification") {
+    console.log("🔐 Challenge Verified");
+    return res.send(req.body.challenge);
+  }
 
-app.event('message', async ({ event, client }) => {
-  console.log("🔥 EVENT RECEIVED:", event);})
-  
-async function createChannel() {
+  const event = req.body.event;
+  if (!event) return res.send("NO EVENT");
+
+  console.log("🔥 EVENT RECEIVED:", event);
+
   try {
-    const channelName = `chat-${Date.now()}`;
-    const result = await app.client.conversations.create({
-    name: channelName,
-    is_private: false  // use true for a private channel
+    // TEXT ONLY
+    if (event.type === "message" && event.text && !event.files) {
+      console.log("💬 TEXT:", event.text);
+      return res.send("OK");
+    }
+
+    // FILE RECEIVED
+    if (event.files && event.files.length > 0) {
+      const file = event.files[0];
+
+      console.log("📁 File Received:", file.name);
+
+      // Get file info
+      const fileInfo = await slackAPICall("/files.info", {
+        file: file.id
+      });
+
+      const downloadURL = fileInfo.file.url_private_download;
+      const fileName = fileInfo.file.name;
+
+      await saveSlackFile(downloadURL, fileName);
+      console.log("✔ FILE SAVED SUCCESSFULLY");
+      return res.send("OK");
+    }
+
+  } catch (error) {
+    console.log("❌ Error:", error);
+  }
+
+  res.send("OK");
+});
+
+
+// ======================= FUNCTIONS =======================
+
+// Unified API caller
+async function slackAPICall(apiURL, data) {
+  const response = await axios.post(`https://slack.com/api${apiURL}`, data, {
+    headers: {
+      Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+      "Content-Type": "application/json"
+    }
   });
 
- const channelId = result.channel.id;
+  if (!response.data.ok) throw response.data;
+  return response.data;
+}
 
-    // Invite bot + sender + agent
+
+
+// 1️⃣ Create channel
+export async function createChannel() {
+  try {
+    const channelName = `chat-${Date.now()}`;
+
+    const response = await slackAPICall("/conversations.create", {
+      name: channelName,
+      is_private: false
+    });
+
+    const channelId = response.channel.id;
+
+    console.log("🔥 Channel Created:", channelId);
+
+    // INVITE USERS
     const koKaung = "U0A22RE8ZM3";
     const agentId = 'U0A1WJS2S0H'; // your agent ID
     const inviteUsers = [koKaung ,agentId];
-    await app.client.conversations.invite({
+    await slackAPICall("/conversations.invite", {
       channel: channelId,
-      users: inviteUsers.join(',')
+      users: inviteUsers.join(',') // your users here
     });
 
-    // Welcome message
-    await app.client.chat.postMessage({
+    // SEND WELCOME MESSAGE
+    await slackAPICall("/chat.postMessage", {
       channel: channelId,
-      text: `👋 Welcome! This public group <#${channelId}> has been created automatically.`
+      text: `Welcome! Group created automatically.`
     });
 
-    console.log(`Group created: ${channelName} (${channelId}) with users: ${inviteUsers.join(', ')}`);
-
-  } catch (error) {
-    console.log("error :", error)
+  } catch (err) {
+    console.log("❌ Channel Create Error:", err);
   }
 }
 
-async function disableUserGroup(userGroupId) {
+
+
+// 2️⃣ Disable User Group
+export async function disableUserGroup(userGroupId) {
   try {
-    const result = await app.client.usergroups.disable({
+    const result = await slackAPICall("/usergroups.disable", {
       usergroup: userGroupId
     });
 
-    console.log("User group disabled!", result);
-  } catch (error) {
-    console.log("Error disabling user group:", error);
+    console.log("🚫 Usergroup Disabled", result);
+
+  } catch (err) {
+    console.log("❌ Disable Error", err);
   }
 }
 
-async function getUserIdByEmail(email) {
+
+
+// 3️⃣ Get userId from email
+export async function getUserIdByEmail(email) {
   try {
-    const result = await app.client.users.lookupByEmail({
-      email: email,
+    const result = await slackAPICall("/users.lookupByEmail", {
+      email: email
     });
 
-    console.log("User info:", result.user);
-    console.log("User ID:", result.user.id);
+    console.log("👤 USER FOUND:", result.user.id);
 
     return result.user.id;
-  } catch (error) {
-    console.log("Error fetching user by email:", error);
+
+  } catch (err) {
+    console.log("❌ Email lookup error", err);
   }
 }
 
 
+
+// 4️⃣ Save File Function
+async function saveSlackFile(downloadURL, filename) {
+  try {
+    if (!fs.existsSync("./downloads")) fs.mkdirSync("./downloads");
+
+    const path = `./downloads/${filename}`;
+
+    const response = await axios.get(downloadURL, {
+      responseType: "arraybuffer",
+      headers: {
+        Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`
+      }
+    });
+
+    fs.writeFileSync(path, response.data);
+    console.log("📁 File saved at:", path);
+
+  } catch (err) {
+    console.log("❌ File save error:", err);
+  }
+}
+
 // createChannel();
-// disableUserGroup("C0A30AWP82C");
-getUserIdByEmail("phoekaung.3189@gmail.com");
+// disableUserGroup("C0A235UCUKG");
+getUserIdByEmail("phoekaung.3819@gmail.com")
 
-
-
-(async () => {
-  await app.start(); // Socket Mode starts internally
-  console.log('⚡ Bolt app running in Socket Mode!');
-
-  server.listen(PORT, () => {
-    console.log(`🌐 Express server running on http://localhost:${PORT}`);
-  });
-})();
+// ======================= SERVER RUN =======================
+app.listen(PORT, () => {
+  console.log(`🌍 Server Started on http://localhost:${PORT}`);
+});
