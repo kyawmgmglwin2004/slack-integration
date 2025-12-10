@@ -8,150 +8,172 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use("/slack/events", express.json());
-app.get("/", (req, res) => {
-    res.send("Hello")
-})
 
-// =================== SLACK CALLBACK ===================
+app.get("/", (req, res) => {
+  res.send("🔥 Server Running!");
+});
+
+
 app.post("/slack/events", async (req, res) => {
-  // Slack verification
+
+  // Challenge verify for Slack
   if (req.body.type === "url_verification") {
-    console.log("🔐 Challenge Verified");
+    console.log("🔐 URL Verified");
     return res.send(req.body.challenge);
   }
 
   const event = req.body.event;
   if (!event) return res.send("NO EVENT");
 
-  console.log("🔥 EVENT RECEIVED:", event);
+  console.log("🔥 Incoming Event:", event);
 
   try {
-    // TEXT ONLY
+    // TEXT message only
     if (event.type === "message" && event.text && !event.files) {
-      console.log("💬 TEXT:", event.text);
+      console.log("💬 Text message:", event.text);
       return res.send("OK");
     }
-
-    // FILE RECEIVED
+//url testing
+    // FILE received
     if (event.files && event.files.length > 0) {
       const file = event.files[0];
+      console.log("📁 File uploaded:", file.name);
 
-      console.log("📁 File Received:", file.name);
-
-      // Get file info
+      // GET real file info
       const fileInfo = await slackAPICall("/files.info", {
         file: file.id
-      });
+      }, "GET");
 
       const downloadURL = fileInfo.file.url_private_download;
       const fileName = fileInfo.file.name;
 
       await saveSlackFile(downloadURL, fileName);
+
       console.log("✔ FILE SAVED SUCCESSFULLY");
       return res.send("OK");
     }
 
-  } catch (error) {
-    console.log("❌ Error:", error);
+  } catch (err) {
+    console.log("❌ Event handler error:", err);
   }
 
   res.send("OK");
 });
 
 
-// ======================= FUNCTIONS =======================
 
-// Unified API caller
-async function slackAPICall(apiURL, data) {
-  const response = await axios.post(`https://slack.com/api${apiURL}`, data, {
+async function slackAPICall(apiURL, data, method = "POST") {
+  const requestConfig = {
+    url: `https://slack.com/api${apiURL}`,
+    method,
     headers: {
       Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
       "Content-Type": "application/json"
     }
-  });
+  };
+
+  if (method === "GET") requestConfig.params = data;
+  else requestConfig.data = data;
+
+  const response = await axios(requestConfig);
 
   if (!response.data.ok) throw response.data;
+
   return response.data;
 }
 
 
-
-// 1️⃣ Create channel
 export async function createChannel() {
   try {
     const channelName = `chat-${Date.now()}`;
 
-    const response = await slackAPICall("/conversations.create", {
+    const result = await slackAPICall("/conversations.create", {
       name: channelName,
       is_private: false
-    });
+    }, "POST");
 
-    const channelId = response.channel.id;
-
+    const channelId = result.channel.id;
     console.log("🔥 Channel Created:", channelId);
 
-    // INVITE USERS
     const koKaung = "U0A22RE8ZM3";
-    const agentId = 'U0A1WJS2S0H'; // your agent ID
-    const inviteUsers = [koKaung ,agentId];
+    const agentId = "U0A1WJS2S0H";
+
     await slackAPICall("/conversations.invite", {
       channel: channelId,
-      users: inviteUsers.join(',') // your users here
-    });
+      users: `${koKaung},${agentId}`
+    }, "POST");
 
-    // SEND WELCOME MESSAGE
     await slackAPICall("/chat.postMessage", {
       channel: channelId,
-      text: `Welcome! Group created automatically.`
-    });
+      text: `👋 Welcome! Auto created channel`
+    }, "POST");
 
   } catch (err) {
-    console.log("❌ Channel Create Error:", err);
+    console.log("❌ Create channel error:", err);
   }
 }
 
 
+async function rename(channelId) {
+  await slackAPICall(
+    "/conversations.rename",
+    {
+      channel: channelId,
+      name: "kmml-" + Date.now()
+    },
+    "POST"
+  );
+}
 
-// 2️⃣ Disable User Group
-export async function disableUserGroup(userGroupId) {
+async function kickUser(channelId, userId) {
+  await slackAPICall(
+    "/conversations.kick",
+    { channel: channelId, user: userId },
+    "POST"
+  );
+}
+
+
+async function deleteChannel(channelId) {
   try {
-    const result = await slackAPICall("/usergroups.disable", {
-      usergroup: userGroupId
-    });
+    const result = await slackAPICall(
+      "/conversations.archive",
+      {
+        channel: channelId
+      },
+      "POST"
+    );
 
-    console.log("🚫 Usergroup Disabled", result);
+    console.log("🔥 Channel Deleted/Archived:");
+    console.log(result);
 
-  } catch (err) {
-    console.log("❌ Disable Error", err);
+  } catch (error) {
+    console.log("❌ Delete Channel Error:", error);
   }
 }
 
-
-
-// 3️⃣ Get userId from email
 export async function getUserIdByEmail(email) {
   try {
-    const result = await slackAPICall("/users.lookupByEmail", {
-      email: email
-    });
+    const response = await slackAPICall("/users.lookupByEmail", {
+      email
+    }, "GET");
 
-    console.log("👤 USER FOUND:", result.user.id);
+    console.log("👤 Found user:", response.user.id);
 
-    return result.user.id;
+    return response.user.id;
 
   } catch (err) {
-    console.log("❌ Email lookup error", err);
+    console.log("❌ Email lookup error:", err);
   }
 }
 
 
 
-// 4️⃣ Save File Function
-async function saveSlackFile(downloadURL, filename) {
+async function saveSlackFile(downloadURL, fileName) {
   try {
     if (!fs.existsSync("./downloads")) fs.mkdirSync("./downloads");
 
-    const path = `./downloads/${filename}`;
+    const filePath = `./downloads/${fileName}`;
 
     const response = await axios.get(downloadURL, {
       responseType: "arraybuffer",
@@ -160,19 +182,26 @@ async function saveSlackFile(downloadURL, filename) {
       }
     });
 
-    fs.writeFileSync(path, response.data);
-    console.log("📁 File saved at:", path);
+    fs.writeFileSync(filePath, response.data);
+
+    console.log("📁 File saved:", filePath);
 
   } catch (err) {
-    console.log("❌ File save error:", err);
+    console.log("❌ Save file error:", err);
   }
 }
 
-// createChannel();
-// disableUserGroup("C0A235UCUKG");
-getUserIdByEmail("phoekaung.3819@gmail.com")
+// getUserIdByEmail("phoekaung.3819@gmail.com")
+createChannel()
+// rename("C0A2K7KDCTT")
+// kickUser("C0A2K7KDCTT", "U0A22RE8ZM3")
 
-// ======================= SERVER RUN =======================
+
+// deleteChannel("C0A2K7KDCTT");
+
+
+
 app.listen(PORT, () => {
-  console.log(`🌍 Server Started on http://localhost:${PORT}`);
+  console.log(`🌍 Running on http://localhost:${PORT}`);
+  console.log("⚡ Ready to receive Slack callback");
 });
