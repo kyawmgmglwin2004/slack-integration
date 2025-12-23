@@ -1,6 +1,7 @@
 import express from "express";
 import axios from "axios";
 import fs from "fs";
+import path from "path";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -11,6 +12,30 @@ app.use("/slack/events", express.json());
 
 app.get("/", (req, res) => {
   res.send("🔥 Server Running!");
+});
+
+
+app.get("/oauth/callback", async (req, res) => {
+  try {
+    const response = await axios.post(
+      "https://slack.com/api/oauth.v2.access",
+      null,
+      {
+        params: {
+          code: req.query.code,
+          client_id: process.env.CLIENT_ID,
+          client_secret: process.env.CLIENT_SECRET
+        }
+      }
+    );
+
+    console.log("Scopes:", response.data.scope);
+    res.send("OK");
+
+  } catch (err) {
+    console.log(err);
+    res.send("ERROR");
+  }
 });
 
 
@@ -62,24 +87,89 @@ app.post("/slack/events", async (req, res) => {
 
 
 
-async function slackAPICall(apiURL, data, method = "POST") {
-  const requestConfig = {
-    url: `https://slack.com/api${apiURL}`,
-    method,
+// async function slackAPICall(apiURL, data, method = "POST") {
+//   const requestConfig = {
+//     url: `https://slack.com/api${apiURL}`,
+//     method,
+//     headers: {
+//       Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+//       "Content-Type": "application/json"
+//     }
+//   };
+
+//   if (method === "GET") requestConfig.params = data;
+//   else requestConfig.data = data;
+
+//   const response = await axios(requestConfig);
+
+//   if (!response.data.ok) throw response.data;
+
+//   return response.data;
+// }
+
+
+async function slackAPICall(method, body) {
+  const url = `https://slack.com/api${method}`;
+
+  const res = await axios.post(url, body, {
     headers: {
-      Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json; charset=utf-8",
+      Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`
     }
-  };
+  });
 
-  if (method === "GET") requestConfig.params = data;
-  else requestConfig.data = data;
+  if (!res.data.ok) {
+    console.log("Slack API Error:", res.data);
+    throw res.data;
+  }
 
-  const response = await axios(requestConfig);
+  return res.data;
+}
 
-  if (!response.data.ok) throw response.data;
+export async function sendPhoto(channelId) {
+  try {
+    console.log("🚀 Starting upload...");
 
-  return response.data;
+    const photoPath = path.join(process.cwd(), "downloads", "pf.jpg");
+
+    if (!fs.existsSync(photoPath)) {
+      console.log("❌ File not found:", photoPath);
+      return;
+    }
+
+    // File Stats
+    const stats = fs.statSync(photoPath);
+    const fileSize = stats.size;
+    const fileData = fs.readFileSync(photoPath);
+
+    // 1️⃣ Request signed upload URL
+    const upload = await slackAPICall("/files.getUploadURLExternal", {
+      filename: "pf.jpg",
+      length: fileSize
+    });
+
+    console.log("✔ Upload URL received.");
+
+    // 2️⃣ Upload binary to Slack's URL
+    await axios.put(upload.upload_url, fileData, {
+      headers: { "Content-Type": "image/jpeg" }
+    });
+
+    console.log("✔ Binary uploaded.");
+
+    // 3️⃣ Tell Slack to attach file to channel
+    await slackAPICall("/files.completeUploadExternal", {
+      files: [
+        { id: upload.file_id, title: "pf.jpg" }
+      ],
+      channel_id: channelId
+    });
+
+    console.log("🎉 Photo sent successfully!");
+
+  } catch (err) {
+    console.log("❌ Upload error:", err.response?.data || err);
+  }
 }
 
 
@@ -192,8 +282,9 @@ async function saveSlackFile(downloadURL, fileName) {
 }
 
 // getUserIdByEmail("phoekaung.3819@gmail.com")
-createChannel()
+// createChannel()
 // rename("C0A2K7KDCTT")
+// sendPhoto("C0A235UCUKG")
 // kickUser("C0A2K7KDCTT", "U0A22RE8ZM3")
 
 
